@@ -9,8 +9,38 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
-from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 from typing import Optional, Tuple, List
+
+def to_2tuple(val):
+    if isinstance(val, (tuple, list)):
+        assert len(val) == 2
+        return (int(val[0]), int(val[1]))
+    v = int(val); return (v, v)
+
+def trunc_normal_(tensor, mean=0., std=1., a=-2., b=2.):
+    import math, torch
+    def norm_cdf(x): return 0.5 * (1 + torch.erf(x / math.sqrt(2)))
+    with torch.no_grad():
+        low = (torch.as_tensor(a, dtype=tensor.dtype, device=tensor.device) - mean) / std
+        high = (torch.as_tensor(b, dtype=tensor.dtype, device=tensor.device) - mean) / std
+        u = torch.rand_like(tensor).mul(norm_cdf(high) - norm_cdf(low)) + norm_cdf(low)
+        z = math.sqrt(2) * torch.erfinv(2*u - 1)
+        tensor.copy_(z.mul(std).add_(mean)).clamp_(min=a, max=b)
+        return tensor
+
+class DropPath(torch.nn.Module):
+    def __init__(self, drop_prob: float = 0.):
+        super().__init__()
+        self.drop_prob = float(drop_prob)
+    def forward(self, x):
+        if self.drop_prob == 0. or not self.training:
+            return x
+        keep_prob = 1.0 - self.drop_prob
+        shape = (x.shape[0],) + (1,) * (x.ndim - 1)
+        random_tensor = x.new_empty(shape).bernoulli_(keep_prob)
+        if keep_prob > 0.0:
+            random_tensor = random_tensor.div(keep_prob)
+        return x * random_tensor
 
 
 class Mlp(nn.Module):
